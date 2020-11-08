@@ -20,17 +20,20 @@ const ami = pulumi.output(aws.getAmi({
 }));
 
 // Config
-const serverPort = 3000;
+const env: string = "dev";
+const serverText: string = "Hello World";
+const serverPort: number = 3000;
 const webImageId = ami.id;
-const webInstanceType = aws.ec2.InstanceType.T2_Micro
-const webMinSize = 1
-const webMaxSize = 3
-const webDesiredCapacity = 1
+// const webInstanceType: string = aws.ec2.InstanceType.T2_Micro;
+const webInstanceType: string = "t2.micro";
+const webMinSize: number = 1;
+const webMaxSize: number = 3;
+const webDesiredCapacity: number = 1;
 
 // Common Tags
 const commonTags = {
     "Pulumi": "true",
-    "env": "dev",
+    "env": env,
 }
 
 // Common SG Rules
@@ -69,9 +72,15 @@ const alb = new aws.alb.LoadBalancer("alb-main", {
 
 const webTarget = new aws.alb.TargetGroup("web-tg", {
     protocol: "HTTP",
-    targetType: "instance",
     port: serverPort,
+    targetType: "instance",
     healthCheck: {
+        path: "/",
+        protocol: "HTTP",
+        matcher: "200",
+        timeout: 3,
+        healthyThreshold: 2,
+        unhealthyThreshold: 2,
         interval: 15,
     },
     deregistrationDelay: 30,
@@ -103,29 +112,44 @@ instanceSg.createIngressRule("allow-alb-inbound-instance", {
     description: "allow web service inbound to instance from alb",
 });
 
-instanceSg.createIngressRule("allow-all-inbound-instance", {
-    location: new awsx.ec2.AnyIPv4Location,
-    ports: new awsx.ec2.TcpPorts(3000),
-    description: "allow all inbound to instance"
-});
+// instanceSg.createIngressRule("allow-all-inbound-instance", {
+//     location: new awsx.ec2.AnyIPv4Location,
+//     ports: new awsx.ec2.TcpPorts(3000),
+//     description: "allow all inbound to instance"
+// });
 
 instanceSg.createEgressRule("allow-all-outbound-instance", allowAllOutboundSgConfig);
 
 // ASG
+// TODO: figure out templating feature for userData script.
 const webLaunchConfig = new aws.ec2.LaunchConfiguration("web-lc", {
     imageId: webImageId,
     instanceType: webInstanceType,
     securityGroups: [instanceSg.id],
-    userData: fs.readFileSync("user-data.sh").toString(),
+    // userData: fs.readFileSync("user-data.sh").toString(),
+    userData: "#!/bin/bash\n" +
+        `echo "<html><h1>${serverText}</h1> -- from $(hostname)!</html>" > index.html\n` +
+        `nohup python -m SimpleHTTPServer ${serverPort} &`,
 });
 
+// TODO: figure out a zero-downtime deploy method. currently 
+// changes to launch config causes existing ASG to be deleted
+// first and then create new ASG.
 const webAsg = new aws.autoscaling.Group("web-asg", {
+    name: pulumi.interpolate `web-asg-${webLaunchConfig.name}`,
     minSize: webMinSize,
     maxSize: webMaxSize,
     desiredCapacity: webDesiredCapacity,
     launchConfiguration: webLaunchConfig.name,
+    minElbCapacity: webMinSize,
+    targetGroupArns: [webTarget.arn],
     vpcZoneIdentifiers: vpcDefault.publicSubnetIds,
     tags: [
+        {
+            key: "Name",
+            value: `web-${env}`,
+            propagateAtLaunch: true,
+        },
         {
             key: "Pulumi",
             value: "true",
@@ -133,17 +157,17 @@ const webAsg = new aws.autoscaling.Group("web-asg", {
         },
         {
             key: "env",
-            value: "dev",
+            value: env,
             propagateAtLaunch: true,
         },
     ],
 });
 
 // Attach ASG to ALB Target Group
-new aws.autoscaling.Attachment("web-asg-alb-attach", {
-    albTargetGroupArn: webTarget.arn,
-    autoscalingGroupName: webAsg.name,
-});
+// new aws.autoscaling.Attachment("web-asg-alb-attach", {
+//     albTargetGroupArn: webTarget.arn,
+//     autoscalingGroupName: webAsg.name,
+// });
 
 // Outputs
 export const webUrl = alb.dnsName;
