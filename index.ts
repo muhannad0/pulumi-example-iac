@@ -3,6 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
 import * as fs from "fs";
 
+// TODO: make it a function
 // Get latest AMI for Amazon Linux 2
 const ami = pulumi.output(aws.getAmi({
     filters: [
@@ -19,6 +20,7 @@ const ami = pulumi.output(aws.getAmi({
     mostRecent: true,
 }));
 
+// TODO: get config externally from Pulumi file
 // Config
 const env: string = "dev";
 const serverText: string = "Hello World";
@@ -132,11 +134,8 @@ const webLaunchConfig = new aws.ec2.LaunchConfiguration("web-lc", {
         `nohup python -m SimpleHTTPServer ${serverPort} &`,
 });
 
-// TODO: figure out a zero-downtime deploy method. currently 
-// changes to launch config causes existing ASG to be deleted
-// first and then create new ASG.
 const webAsg = new aws.autoscaling.Group("web-asg", {
-    name: pulumi.interpolate `web-asg-${webLaunchConfig.name}`,
+    name: webLaunchConfig.name.apply(launchConfig => "asg-" + launchConfig),
     minSize: webMinSize,
     maxSize: webMaxSize,
     desiredCapacity: webDesiredCapacity,
@@ -161,7 +160,7 @@ const webAsg = new aws.autoscaling.Group("web-asg", {
             propagateAtLaunch: true,
         },
     ],
-});
+}, {deleteBeforeReplace: false});
 
 // Attach ASG to ALB Target Group
 // new aws.autoscaling.Attachment("web-asg-alb-attach", {
