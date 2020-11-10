@@ -1,3 +1,23 @@
-name: example-webservice
+name: web-service
 runtime: nodejs
-description: A minimal AWS TypeScript Pulumi program
+description: A basic web service deployed to AWS using ASG and ALB
+template:
+  config:
+    aws:region:
+      description: The AWS region to deploy into
+      default: us-east-1
+    web-config:env:
+      description: The name deploy environment (dev, stage, prod)
+    web-config:serverText:
+      description: The text to display on the main webpage
+    web-config:serverPort:
+      description: The port that the web service is running on
+    web-config:instanceType:
+      description: The type of instance to launch
+    web-config:minSize:
+      description: The minimum number of instances that should be running
+    web-config:maxSize:
+      description: The maximum number of instances that should be running
+    web-config:desiredSize:
+      description: The desired number of instances that should always be running
+        on the cluster

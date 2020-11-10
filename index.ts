@@ -20,17 +20,17 @@ const ami = pulumi.output(aws.getAmi({
     mostRecent: true,
 }));
 
-// TODO: get config externally from Pulumi file
 // Config
-const env: string = "dev";
-const serverText: string = "Hello World";
-const serverPort: number = 3000;
+const config = new pulumi.Config("web-config");
+
+const env: string = config.require("env");
+const serverText: string = config.get("serverText") || "Hello World";
+const serverPort: number = config.getNumber("serverPort") || 3000;
+const webInstanceType: string = config.get("instanceType") || "t2.micro";
+const webMinSize: number = config.getNumber("minSize")|| 1;
+const webMaxSize: number = config.getNumber("maxSize") || 1;
+const webDesiredCapacity: number = config.getNumber("desiredSize") || webMinSize;
 const webImageId = ami.id;
-// const webInstanceType: string = aws.ec2.InstanceType.T2_Micro;
-const webInstanceType: string = "t2.micro";
-const webMinSize: number = 1;
-const webMaxSize: number = 3;
-const webDesiredCapacity: number = 1;
 
 // Common Tags
 const commonTags = {
@@ -169,4 +169,4 @@ const webAsg = new aws.autoscaling.Group("web-asg", {
 // });
 
 // Outputs
-export const webUrl = alb.dnsName;
+export const webUrl = alb.dnsName.apply(url => "http://" + url);
