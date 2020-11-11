@@ -3,22 +3,43 @@ import * as aws from "@pulumi/aws";
 import * as awsx from "@pulumi/awsx";
 import * as fs from "fs";
 
-// TODO: make it a function
-// Get latest AMI for Amazon Linux 2
-const ami = pulumi.output(aws.getAmi({
-    filters: [
-        {
-            name: "name",
-            values: ["amzn2-ami-hvm-2.0.*-x86_64-gp2"],
-        },
-        {
-            name: "virtualization-type",
-            values: ["hvm"],
-        },
-    ],
-    owners: ["amazon"],
-    mostRecent: true,
-}));
+// AMI filters for commonly used distributions
+const distroFilter = [
+    {
+        distro: "amazon", 
+        image: "amzn2-ami-hvm-2.0.*-x86_64-gp2", 
+        owner: "amazon"
+    },
+    {
+        distro: "ubuntu",
+        image: "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*",
+        owner: "099720109477"
+    }
+];
+
+function getAmiLatest(distro: string){
+    let filter = distroFilter.find((d) => d.distro === distro);
+    if (filter === undefined) {
+        throw Error("No details available for provided distribution");
+    }
+
+    let ami = aws.getAmi({
+        filters: [
+            {
+                name: "name",
+                values: [filter.image],
+            },
+            {
+                name: "virtualization-type",
+                values: ["hvm"],
+            },
+        ],
+        owners: [filter.owner],
+        mostRecent: true,
+    }, {async: true});
+    
+    return ami.then(ami => ami.id);
+}
 
 // Config
 const config = new pulumi.Config("web-config");
@@ -30,7 +51,7 @@ const webInstanceType: string = config.get("instanceType") || "t2.micro";
 const webMinSize: number = config.getNumber("minSize")|| 1;
 const webMaxSize: number = config.getNumber("maxSize") || 1;
 const webDesiredCapacity: number = config.getNumber("desiredSize") || webMinSize;
-const webImageId = ami.id;
+const webImageId = getAmiLatest("amazon");
 
 // Common Tags
 const commonTags = {
@@ -162,11 +183,5 @@ const webAsg = new aws.autoscaling.Group("web-asg", {
     ],
 }, {deleteBeforeReplace: false});
 
-// Attach ASG to ALB Target Group
-// new aws.autoscaling.Attachment("web-asg-alb-attach", {
-//     albTargetGroupArn: webTarget.arn,
-//     autoscalingGroupName: webAsg.name,
-// });
-
 // Outputs
-export const webUrl = alb.dnsName.apply(url => "http://" + url);
+export const webUrl = pulumi.interpolate `http://${alb.dnsName}`;
